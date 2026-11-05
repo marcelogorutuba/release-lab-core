@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	"strings"
 
+	apiErrors "evo-ai-core-service/internal/httpclient/errors"
 	errorsPostgres "evo-ai-core-service/internal/infra/postgres"
 	"evo-ai-core-service/internal/utils/stringutils"
 	"evo-ai-core-service/pkg/agent/client/a2a"
@@ -24,6 +27,9 @@ import (
 
 	"github.com/google/uuid"
 )
+
+// Same wording as processor/a2a.go, so both refusals read alike.
+const cardURLRequiredMessage = "card_url is required for a2a type agents"
 
 // Persisted onto a malformed agent coerced to LLM, so a retired id here lands in
 // the customer's data. Prefixed: LiteLLM only guesses bare names it already knows.
@@ -101,11 +107,11 @@ func NewAgentService(
 
 func (s *agentService) Create(ctx context.Context, request model.Agent) (*model.Agent, error) {
 	if err := s.validateCreate(ctx, &request); err != nil {
-		return nil, errors.New("Validation failed for agent: " + err.Error())
+		return nil, wrapValidationError("Validation failed for agent: ", err)
 	}
 
 	if err := s.processAgentCreate(ctx, &request); err != nil {
-		return nil, errors.New("Failed to process agent")
+		return nil, err
 	}
 
 	agent, err := s.agentRepository.Create(ctx, request)
@@ -132,30 +138,117 @@ func (s *agentService) Create(ctx context.Context, request model.Agent) (*model.
 	return agent, nil
 }
 
+// Same sentence the processor raises (src/schemas/schemas.py, `model` validator).
+const modelRequiredMessage = "Model is required for llm type agents"
+
+func (s *agentService) validateAgent(ctx context.Context, request *model.Agent, isCreate bool) error {
+	if err := validateModelForType(request); err != nil {
+		return err
+	}
+
+	if err := validateCardURLForType(request); err != nil {
+		return err
+	}
+
+	return s.validateRelatedEntities(ctx, request, isCreate)
+}
+
+// Validates the row the update will produce: GORM Updates(struct) skips zero
+// values, so a field the client omits keeps the stored one.
+func (s *agentService) validateAgentUpdate(ctx context.Context, current, request *model.Agent) error {
+	merged := *request
+
+	if strings.TrimSpace(merged.Type) == "" {
+		merged.Type = current.Type
+	}
+
+	if strings.TrimSpace(merged.Model) == "" {
+		merged.Model = current.Model
+	}
+
+	// Exact empties only: GORM writes whitespace, so it must not fall back.
+	if merged.CardURL == "" {
+		merged.CardURL = current.CardURL
+	}
+
+	if err := validateModelForType(&merged); err != nil {
+		return err
+	}
+
+	if err := validateCardURLForType(&merged); err != nil {
+		return err
+	}
+
+	return s.validateRelatedEntities(ctx, request, false)
+}
+
+func validateModelForType(request *model.Agent) error {
+	if request.Type != model.AgentTypeLLM {
+		return nil
+	}
+
+	if strings.TrimSpace(request.Model) != "" {
+		return nil
+	}
+
+	return apiErrors.New(apiErrors.ValidationError, modelRequiredMessage, http.StatusBadRequest)
+}
+
+// Keeps an *apiErrors.ApiError intact; wrapping it would reach the handler as a 500.
+func wrapValidationError(prefix string, err error) error {
+	var apiErr *apiErrors.ApiError
+	if errors.As(err, &apiErr) {
+		return err
+	}
+
+	return errors.New(prefix + err.Error())
+}
+
+// Only a2a needs card_url; the processor refuses to run one without it.
+func validateCardURLForType(request *model.Agent) error {
+	if request.Type != model.AgentTypeA2A {
+		return nil
+	}
+
+	if strings.TrimSpace(request.CardURL) != "" {
+		return nil
+	}
+
+	return apiErrors.New(apiErrors.ValidationError, cardURLRequiredMessage, http.StatusBadRequest)
+}
+
 func (s *agentService) validateCreate(ctx context.Context, request *model.Agent) error {
-	return s.validateRelatedEntities(ctx, request, true)
+	return s.validateAgent(ctx, request, true)
 }
 
 func (s *agentService) validateRelatedEntities(ctx context.Context, request *model.Agent, isCreate bool) error {
 	if request.FolderID != nil {
 		if _, err := s.folderService.GetByID(ctx, *request.FolderID); err != nil {
-			return err
+			return referenceLookupError("folder_id", err)
 		}
 	}
 
 	if request.ApiKeyID != nil {
 		if _, err := s.apiKeyService.GetByID(ctx, *request.ApiKeyID); err != nil {
-			return err
+			return referenceLookupError("api_key_id", err)
 		}
 	}
 
 	return nil
 }
 
+func referenceLookupError(field string, err error) error {
+	if !errorsPostgres.IsRecordNotFound(err) {
+		return err
+	}
+
+	return apiErrors.New(apiErrors.ValidationError, field+": "+err.Error(), http.StatusBadRequest)
+}
+
 func (s *agentService) processAgentCreate(ctx context.Context, request *model.Agent) error {
 	// Pass nil for existingConfig since this is a CREATE operation
 	if err := s.configProcessor.ProcessAgentConfig(ctx, request, nil); err != nil {
-		return errors.New("Failed to process agent config")
+		return err
 	}
 
 	switch request.Type {
@@ -175,28 +268,30 @@ func (s *agentService) processAgentCreate(ctx context.Context, request *model.Ag
 	case model.AgentTypeSequential, model.AgentTypeParallel, model.AgentTypeLoop:
 		return s.flowProcessor.Create(ctx, request)
 	default:
-		return errors.New("Unsupported agent type: " + request.Type)
+		return apiErrors.New(apiErrors.ValidationError, "Unsupported agent type: "+request.Type, http.StatusBadRequest)
 	}
 }
 
 func (s *agentService) Update(ctx context.Context, request *model.Agent, id uuid.UUID) (*model.Agent, error) {
 	current, err := s.GetByID(ctx, id)
 	if err != nil {
+		if errorsPostgres.IsRecordNotFound(err) {
+			return nil, apiErrors.New(apiErrors.AgentNotFound, "Agent not found", http.StatusNotFound)
+		}
 		return nil, errors.New("Failed to get current agent")
 	}
 
-	if err := s.validateRelatedEntities(ctx, request, false); err != nil {
-		return nil, errors.New("Validation failed: " + err.Error())
+	if err := s.validateAgentUpdate(ctx, current, request); err != nil {
+		return nil, wrapValidationError("Validation failed: ", err)
 	}
 
 	if err := s.processAgentUpdate(ctx, current, request); err != nil {
-		// Include the original error message for better debugging
-		return nil, errors.New(fmt.Sprintf("Failed to process agent: %v", err))
+		return nil, err
 	}
 
 	agent, err := s.agentRepository.Update(ctx, request, id)
 	if err != nil {
-		return nil, errors.New("Failed to update agent")
+		return nil, errorsPostgres.MapDBError(err, model.AgentErrors)
 	}
 
 	// Update Evolution bot synchronously to ensure it works with the current context
@@ -223,7 +318,7 @@ func (s *agentService) processAgentUpdate(ctx context.Context, current, request 
 	dropHydratedCopies(currentConfig)
 
 	if err := s.configProcessor.ProcessAgentConfig(ctx, request, currentConfig); err != nil {
-		return errors.New(fmt.Sprintf("Failed to process agent config: %v", err))
+		return err
 	}
 
 	switch {
@@ -243,7 +338,7 @@ func (s *agentService) processAgentUpdate(ctx context.Context, current, request 
 	case isFlowType(request.Type):
 		return s.flowProcessor.Update(ctx, current, request)
 	default:
-		return errors.New("Unsupported agent type: " + request.Type)
+		return apiErrors.New(apiErrors.ValidationError, "Unsupported agent type: "+request.Type, http.StatusBadRequest)
 	}
 }
 
@@ -632,7 +727,7 @@ func (s *agentService) ImportAgents(ctx context.Context, request model.AgentImpo
 	if request.FolderID != nil {
 		_, err := s.folderService.GetByID(ctx, *request.FolderID)
 		if err != nil {
-			return nil, err
+			return nil, referenceLookupError("folder_id", err)
 		}
 	}
 
@@ -654,7 +749,8 @@ func (s *agentService) ImportAgentsFromJSON(ctx context.Context, request model.A
 	folderID := request.FolderID
 	agentsData := request.AgentData
 
-	importedAgents := make([]*model.Agent, 0, len(agentsData))
+	// Validate every entry before the first write.
+	agents := make([]*model.Agent, 0, len(agentsData))
 
 	for _, data := range agentsData {
 		agent := &model.Agent{
@@ -663,13 +759,13 @@ func (s *agentService) ImportAgentsFromJSON(ctx context.Context, request model.A
 
 		name, ok := data["name"].(string)
 		if !ok {
-			return nil, errors.New("Invalid agent data: name is required and must be a string")
+			return nil, apiErrors.New(apiErrors.ValidationError, "Invalid agent data: name is required and must be a string", http.StatusBadRequest)
 		}
 		agent.Name = name
 
 		agentType, ok := data["type"].(string)
 		if !ok {
-			return nil, errors.New("Invalid agent data: type is required and must be a string")
+			return nil, apiErrors.New(apiErrors.ValidationError, "Invalid agent data: type is required and must be a string", http.StatusBadRequest)
 		}
 		agent.Type = agentType
 
@@ -707,9 +803,15 @@ func (s *agentService) ImportAgentsFromJSON(ctx context.Context, request model.A
 			return nil, err
 		}
 
+		agents = append(agents, agent)
+	}
+
+	importedAgents := make([]*model.Agent, 0, len(agents))
+
+	for _, agent := range agents {
 		createdAgent, err := s.agentRepository.Create(ctx, *agent)
 		if err != nil {
-			return nil, err
+			return nil, errorsPostgres.MapDBError(err, model.AgentErrors)
 		}
 
 		importedAgents = append(importedAgents, createdAgent)
@@ -721,7 +823,11 @@ func (s *agentService) ImportAgentsFromJSON(ctx context.Context, request model.A
 func (s *agentService) AssignFolder(ctx context.Context, id uuid.UUID, request *model.Agent) (*model.Agent, error) {
 	agent, err := s.agentRepository.GetByID(ctx, id)
 	if err != nil {
-		return nil, errors.New("Agent not found")
+		mapped := errorsPostgres.MapDBError(err, model.AgentErrors)
+		if errorsPostgres.IsRecordNotFound(mapped) {
+			return nil, apiErrors.New(apiErrors.AgentNotFound, "Agent not found", http.StatusNotFound)
+		}
+		return nil, mapped
 	}
 
 	if request.FolderID == nil {
@@ -735,12 +841,12 @@ func (s *agentService) AssignFolder(ctx context.Context, id uuid.UUID, request *
 
 	_, err = s.folderService.GetByID(ctx, *request.FolderID)
 	if err != nil {
-		return nil, errors.New("Folder not found")
+		return nil, referenceLookupError("folder_id", err)
 	}
 
 	agent, err = s.agentRepository.Update(ctx, request, id)
 	if err != nil {
-		return nil, err
+		return nil, errorsPostgres.MapDBError(err, model.AgentErrors)
 	}
 
 	return agent, nil
@@ -749,7 +855,10 @@ func (s *agentService) AssignFolder(ctx context.Context, id uuid.UUID, request *
 func (s *agentService) ListAgentsByFolderID(ctx context.Context, folderId uuid.UUID, page int, pageSize int) (*model.AgentListResponse, error) {
 	_, err := s.folderService.GetByID(ctx, folderId)
 	if err != nil {
-		return nil, errors.New("Folder not found")
+		if errorsPostgres.IsRecordNotFound(err) {
+			return nil, apiErrors.New(apiErrors.FolderNotFound, "Folder not found", http.StatusNotFound)
+		}
+		return nil, err
 	}
 
 	agents, err := s.agentRepository.ListAgentsByFolderID(ctx, folderId, page, pageSize)

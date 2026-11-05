@@ -9,13 +9,14 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 concurrency:
   group: docker-publish-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  IMAGE_NAME: evoapicloud/evo-ai-core-service-community
+  IMAGE_NAME: ghcr.io/marcelogorutuba/release-lab-core
 
 jobs:
   build-pr:
@@ -33,8 +34,9 @@ jobs:
 
       - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Resolve PR tags
         id: tags
@@ -76,8 +78,9 @@ jobs:
 
       - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push by digest
         id: build
@@ -121,8 +124,9 @@ jobs:
 
       - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Resolve tags
         id: tags
