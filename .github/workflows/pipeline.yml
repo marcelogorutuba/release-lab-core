@@ -25,4 +25,3 @@ jobs:
       packages: write
     with:
       image: ghcr.io/marcelogorutuba/release-lab-core
-# lab probe
