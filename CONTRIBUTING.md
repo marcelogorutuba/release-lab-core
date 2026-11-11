@@ -86,3 +86,5 @@ Thanks for helping make Evo CRM Core Service better!
 ---
 
 © 2026 Evolution Foundation
+
+<!-- lab probe -->
