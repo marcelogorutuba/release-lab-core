@@ -1,0 +1,99 @@
+# golangci-lint v2. The CI pins the version in the shared lint workflow.
+version: "2"
+
+run:
+  # Same tags as the CI tests, so the integration tests are linted too.
+  build-tags: [integration]
+
+linters:
+  default: standard
+  exclusions:
+    # Baseline: 71 issues in 23 files. Do not add entries by hand.
+    rules:
+      - path: '^internal/httpclient/helpers\.go$'
+        linters: [errcheck]
+        text: '^Error return value of `resp\.Body\.Close` is not checked$'
+      - path: '^internal/middleware/agent_access\.go$'
+        linters: [unused]
+        text: '^func bodyToMap is unused$'
+      - path: '^internal/middleware/cors\.go$'
+        linters: [unused]
+        text: '^func isAllowedOrigin is unused$'
+      - path: '^internal/middleware/evo_auth\.go$'
+        linters: [staticcheck]
+        text: '^SA1029: should not use built-in type string as key for value; define your own type to avoid collisions$'
+      - path: '^internal/middleware/jwt\.go$'
+        linters: [staticcheck]
+        text: '^SA1029: should not use built-in type string as key for value; define your own type to avoid collisions$'
+      - path: '^internal/middleware/permission\.go$'
+        linters: [ineffassign]
+        text: '^ineffectual assignment to err$'
+      - path: '^internal/middleware/permission\.go$'
+        linters: [staticcheck]
+        text: '^SA4006: this value of err is never used$'
+      - path: '^internal/middleware/permission_failclosed_test\.go$'
+        linters: [staticcheck]
+        text: '^SA1029: should not use built-in type string as key for value; define your own type to avoid collisions$'
+      - path: '^internal/services/evo_auth_service\.go$'
+        linters: [unused]
+        text: '^func \(\*evoAuthService\)\.doGet is unused$'
+      - path: '^internal/utils/jwtutils/jwt\.go$'
+        linters: [staticcheck]
+        text: '^QF1008: could remove embedded field "Time" from selector$'
+      - path: '^internal/utils/jwtutils/jwt\.go$'
+        linters: [staticcheck]
+        text: '^ST1005: error strings should not be capitalized$'
+      - path: '^internal/utils/stringutils/string\.go$'
+        linters: [errcheck]
+        text: '^Error return value of `json\.Unmarshal` is not checked$'
+      - path: '^pkg/agent/handler/agent_handler\.go$'
+        linters: [errcheck]
+        text: '^Error return value of `src\.Close` is not checked$'
+      - path: '^pkg/agent/model/agent\.go$'
+        linters: [staticcheck]
+        text: '^QF1008: could remove embedded field "UUID" from selector$'
+      - path: '^pkg/agent/model/agent_bot\.go$'
+        linters: [staticcheck]
+        text: '^S1009: should omit nil check; len\(\) for nil maps is defined as zero$'
+      - path: '^pkg/agent/service/agent_service\.go$'
+        linters: [ineffassign]
+        text: '^ineffectual assignment to agent$'
+      - path: '^pkg/agent/service/agent_service\.go$'
+        linters: [staticcheck]
+        text: '^SA4006: this value of agent is never used$'
+      - path: '^pkg/agent/service/agent_service\.go$'
+        linters: [staticcheck]
+        text: '^ST1005: error strings should not be capitalized$'
+      - path: '^pkg/agent/service/agent_service\.go$'
+        linters: [unused]
+        text: '^field externalProcessor is unused$'
+      - path: '^pkg/agent/service/backfill_migration_integration_test\.go$'
+        linters: [errcheck]
+        text: '^Error return value of `admin\.Close` is not checked$'
+      - path: '^pkg/agent/service/backfill_migration_integration_test\.go$'
+        linters: [errcheck]
+        text: '^Error return value of `db\.Close` is not checked$'
+      - path: '^pkg/agent/service/processor/config_processor\.go$'
+        linters: [staticcheck]
+        text: '^S1031: unnecessary nil check around range$'
+      - path: '^pkg/agent_integration/handler/agent_integration_handler\.go$'
+        linters: [errcheck]
+        text: '^Error return value of `resp\.Body\.Close` is not checked$'
+      - path: '^pkg/custom_mcp_server/service/custom_mcp_server_service\.go$'
+        linters: [staticcheck]
+        text: '^ST1005: error strings should not be capitalized$'
+      - path: '^pkg/custom_mcp_server/service/custom_mcp_server_service_test\.go$'
+        linters: [staticcheck]
+        text: '^SA1029: should not use built-in type string as key for value; define your own type to avoid collisions$'
+      - path: '^pkg/custom_tool/service/custom_tool_service\.go$'
+        linters: [errcheck]
+        text: '^Error return value of `resp\.Body\.Close` is not checked$'
+      - path: '^pkg/folder/service/folder_service\.go$'
+        linters: [staticcheck]
+        text: '^ST1005: error strings should not be capitalized$'
+      - path: '^pkg/folder_share/service/folder_share_service\.go$'
+        linters: [staticcheck]
+        text: '^ST1005: error strings should not be capitalized$'
+      - path: '^pkg/integration_credential/service/integration_credential_service\.go$'
+        linters: [staticcheck]
+        text: '^ST1005: error strings should not be capitalized$'
