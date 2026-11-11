@@ -51,7 +51,7 @@ jobs:
       - name: Test
         run: |
           set -o pipefail
-          go test -modfile=go.community.mod -tags integration -v ./... 2>&1 | tee go-test.log
+          go test -modfile=go.community.mod -v ./... 2>&1 | tee go-test.log
 
       # An integration test skips itself when its database is missing; that is a test
       # that did not run.
