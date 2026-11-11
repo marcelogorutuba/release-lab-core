@@ -336,6 +336,7 @@ func sortedStrings(values []string) []string {
 }
 
 func TestReferenceQueriesReportEveryHolderAtVolume(t *testing.T) {
+	t.Fatal("lab probe: this integration test must run in CI")
 	db := openReferenceReplica(t)
 	ctx := context.Background()
 
