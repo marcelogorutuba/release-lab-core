@@ -26,3 +26,4 @@ jobs:
     with:
       image: ghcr.io/marcelogorutuba/release-lab-core
 # lab: direct change on a release branch
+# lab: workflow change by PR
