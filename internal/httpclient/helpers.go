@@ -189,3 +189,8 @@ func DoPostForm[Res any](
 
 	return DoJSON[Res](resp, err, httpStatusCode)
 }
+
+// LabProbeClose repeats a baselined issue in the same file.
+func LabProbeClose(resp *http.Response) {
+	defer resp.Body.Close()
+}
