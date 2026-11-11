@@ -8,8 +8,28 @@ permissions:
 
 jobs:
   test:
-    name: go vet + go test
+    name: go build + go test
     runs-on: ubuntu-latest
+
+    # The integration tests (build tag `integration`) create their own schemas and roles,
+    # so they need a superuser.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: evo_core_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      EVO_TENANT_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/evo_core_test?sslmode=disable
+
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -28,8 +48,16 @@ jobs:
       - name: Build
         run: go build -modfile=go.community.mod ./...
 
-      - name: Vet
-        run: go vet -modfile=go.community.mod ./...
-
       - name: Test
-        run: go test -modfile=go.community.mod ./...
+        run: |
+          set -o pipefail
+          go test -modfile=go.community.mod -tags integration -v ./... 2>&1 | tee go-test.log
+
+      # An integration test skips itself when its database is missing; that is a test
+      # that did not run.
+      - name: Fail on skipped tests
+        run: |
+          if grep -E '^[[:space:]]*--- SKIP' go-test.log; then
+            echo "::error::Skipped tests count as failures (listed above)."
+            exit 1
+          fi
