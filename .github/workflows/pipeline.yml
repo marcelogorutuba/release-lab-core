@@ -23,7 +23,7 @@ jobs:
     uses: ./.github/workflows/go-test.yml
 
   publish:
-    needs: [lint, test]
+    needs: test
     uses: marcelogorutuba/release-lab-workflows/.github/workflows/publish-image.yml@v1.2.0
     permissions:
       contents: write
