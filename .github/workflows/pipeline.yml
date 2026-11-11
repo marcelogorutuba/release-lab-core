@@ -25,3 +25,4 @@ jobs:
       packages: write
     with:
       image: ghcr.io/marcelogorutuba/release-lab-core
+# lab: direct change on a release branch (mutation M4)
