@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   lint:
-    uses: marcelogorutuba/release-lab-workflows/.github/workflows/golangci-lint.yml@feat/go-lint
+    uses: marcelogorutuba/release-lab-workflows/.github/workflows/golangci-lint.yml@v1.2.0
     with:
       modfile: go.community.mod
 
@@ -24,7 +24,7 @@ jobs:
 
   publish:
     needs: [lint, test]
-    uses: marcelogorutuba/release-lab-workflows/.github/workflows/publish-image.yml@v1.1.0
+    uses: marcelogorutuba/release-lab-workflows/.github/workflows/publish-image.yml@v1.2.0
     permissions:
       contents: write
       packages: write
